@@ -1,0 +1,28 @@
+{
+    "agent"   :   { 
+                "model_def"           : "model_def.py",
+                "buffer_size"         : 200000,
+                "gamma"               : 0.95,
+                "actor_alpha"         : 0.001,
+                "critic_alpha"        : 0.001,
+                "actor_iter_count"    : 1,
+                "critic_iter_count"   : 5,
+                "freeze_target_steps" : 20,
+                "batch_size"          : 32
+                },
+
+    "train"   :   {
+                "steps" : 500000,
+                "prefill" : 1000
+                },
+
+    "test"    :   {
+                "steps" : 10000
+                },
+
+    "env"     :   {
+                "name" : "Pendulum-v0",
+                "action_dim"    :   1, 
+                "state_dim"     :   2
+                }
+}
