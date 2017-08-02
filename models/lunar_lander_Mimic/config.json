@@ -1,0 +1,19 @@
+{
+    "agent"   :   { 
+                "model_def"           : "model_def.py",
+                "actor_alpha"         : 0.002,
+                "batch_size"          : 32 
+                },
+
+    "train"   :   {
+                "steps" : 500000
+                },
+
+    "test"    :   {
+                "steps" : 10000
+                },
+
+    "env"     :   {
+                "name" : "LunarLanderContinuous-v2"
+                }
+}

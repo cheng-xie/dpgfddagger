@@ -56,7 +56,7 @@ class Runner:
             for step in range(prefill):
                 cur_obs = self.env.cur_obs
                 _ = self.agent.get_next_action(cur_obs)
-                cur_action = [random.random()*4.0-2.0]*self.env.action_size[0]
+                cur_action = np.asarray([random.random()*2.0-1.0]*self.env.action_size[0])
                 next_state, reward, done = self.env.next_obs(cur_action, render = (step % 8 == 0))
 
                 temp_reward = reward
@@ -75,7 +75,7 @@ class Runner:
             cur_action = np.squeeze(self.agent.get_next_action(cur_obs), axis=0)
             if (any(np.isnan(cur_obs))):
                 pdb.set_trace()
-            next_state, reward, done = self.env.next_obs(cur_action, render = (step % 2 == 0))
+            next_state, reward, done = self.env.next_obs(cur_action, render = (step % 8 == 0))
 
             temp_reward = reward
             temp_done = done
@@ -107,6 +107,7 @@ class Runner:
         for step in range(test_steps):
             cur_obs = self.env.cur_obs
             cur_action = np.squeeze(self.agent.get_next_action(cur_obs, is_test = True), axis=0)
+            cur_action = np.clip(cur_action, -1, 1)
             next_state, reward, done = self.env.next_obs(cur_action, render = True)
 
 if __name__ == "__main__":
@@ -116,7 +117,7 @@ if __name__ == "__main__":
     # parser.add_argument('--no-cuda', action='store_true', default=False, help='enables CUDA training')
     # parser.add_argument('--seed', type=int, default=1, metavar='S', help='random seed (default: 1)')
     # parser.add_argument('--log-interval', type=int, default=10, metavar='N', help='how many batches to wait before logging training status')
-    parser.add_argument('--model-path', type=str, metavar='m', help='path to folder where model is defined')
+    parser.add_argument('--model-path', type=str, required=True, metavar='m', help='path to folder where model is defined')
     parser.add_argument('--save-path', type=str, metavar='s', help='filename where weights should be saved to')
     parser.add_argument('--load-path', type=str, default=None, metavar='l', help='filename where weights should be loaded from')
     parser.add_argument('--cuda', action='store_true', default=False, help='enables CUDA training')

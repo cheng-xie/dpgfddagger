@@ -2,6 +2,8 @@ import torch
 import torch.optim as opt
 from torch.autograd import Variable
 from torch import FloatTensor as FT
+import torch.nn as nn
+from torch.utils.data import TensorDataset, DataLoader
 import agent
 import numpy as np
 from torch.utils.serialization import load_lua
@@ -9,7 +11,6 @@ import importlib.util
 import random
 
 #Default hyperparameter values
-LEARNING_RATE_CRITIC = 0.01
 LEARNING_RATE_ACTOR = 0.01
 BATCH_SIZE = 100
 
@@ -31,9 +32,7 @@ class MimicAgent():
             model_def,
             state_size = 1,
             action_size = 1,
-            buffer_size = REPLAY_BUFFER_SIZE,
             actor_alpha = LEARNING_RATE_ACTOR,
-            actor_iter_count = ACTOR_ITER_COUNT,
             batch_size = BATCH_SIZE,
             use_cuda = True):
         """Constructor for the DDPG_agent
@@ -47,7 +46,6 @@ class MimicAgent():
 
         #initialize parameters
         self._actor_alpha = actor_alpha
-        self._actor_iter_count = actor_iter_count
         self._batch_size = batch_size
         self._state_size = state_size
         self._action_size = action_size
@@ -69,13 +67,10 @@ class MimicAgent():
         if self._use_cuda:
             self.criterion = self.criterion.cuda()
 
-    def train_epochs(self, states, actions, epochs, batch_size, iters_per_log = 1):
-        """Trains the agent for a bit.
-
-            Args:
-            Returns:
-        """
-        dataset = TensorDataset(FT(states), FT(actions))
+    def train_iters(self, states, actions, epochs, batch_size, iters_per_log = 1):
+        states = torch.from_numpy(states.astype(np.float32))
+        actions = torch.from_numpy(actions.astype(np.float32))
+        dataset = TensorDataset((states), (actions))
         self.dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
         tot_loss = 0
@@ -83,10 +78,59 @@ class MimicAgent():
         for epoch in range(epochs):
             for cur_iter, (state_batch, action_batch) in enumerate(self.dataloader):
                 # Cuda
-                if self.use_cuda:
-                    state_batch = state_batch.cuda()
-                if self.use_cuda:
-                    action_batch = action_batch.cuda()
+                if self._use_cuda:
+                    state_batch = (state_batch.cuda())
+                if self._use_cuda:
+                    action_batch = (action_batch.cuda())
+                print(type(state_batch))
+                state_batch= Variable(state_batch)
+                action_batch= Variable(action_batch)
+
+                # Forward pass
+                pred_actions = self.actor.forward(state_batch)
+
+                # Calculate the loss
+                loss = self.criterion(pred_actions, action_batch)
+
+                # Zero out the gradients
+                self._actor_optimizer.zero_grad()
+
+                # Calculate some gradients
+                loss.backward()
+
+                # Run update step
+                self._actor_optimizer.step()
+
+                tot_loss += loss.data[0]
+                log_iters_count += 1
+
+                if log_iters_count % iters_per_log == 0:
+                    print('Epoch {} Iter {}'.format(epoch, cur_iter))
+                    print('Loss', tot_loss/iters_per_log)
+                    tot_loss = 0
+
+    def train_epochs(self, states, actions, epochs, batch_size, iters_per_log = 1):
+        """Trains the agent for a bit.
+
+            Args:
+            Returns:
+        """
+        states = torch.from_numpy(states.astype(np.float32))
+        actions = torch.from_numpy(actions.astype(np.float32))
+        dataset = TensorDataset((states), (actions))
+        self.dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+        tot_loss = 0
+        log_iters_count = 0
+        for epoch in range(epochs):
+            for cur_iter, (state_batch, action_batch) in enumerate(self.dataloader):
+                # Cuda
+                if self._use_cuda:
+                    state_batch = (state_batch.cuda())
+                if self._use_cuda:
+                    action_batch = (action_batch.cuda())
+                state_batch= Variable(state_batch)
+                action_batch= Variable(action_batch)
 
                 # Forward pass
                 pred_actions = self.actor.forward(state_batch)
@@ -121,7 +165,7 @@ class MimicAgent():
                 agent_id will carry out given the current state
         """
         cur_action = None
-        a, _ = self.actor.forward(self.upcast(np.expand_dims(cur_state,axis=0)),[])
+        a = self.actor.forward(self.upcast(np.expand_dims(cur_state,axis=0)))
         cur_action = a.data.cpu().numpy()
         return cur_action
 

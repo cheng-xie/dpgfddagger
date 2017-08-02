@@ -115,9 +115,19 @@ class DDPGAgent(agent.Agent):
         #initialize models
         self.load_models()
 
+        #Move weights and bufffers to the gpu if possible
+        if self._use_cuda:
+            self.actor = self.actor.cuda()
+            self.critic = self.critic.cuda()
+            self._target_critic = self._target_critic.cuda()
+
         #Initialize optimizers
         self._actor_optimizer = opt.Adam(self.actor.parameters(), lr=self._actor_alpha)
         self._critic_optimizer = opt.Adam(self.critic.parameters(), lr=self._critic_alpha)
+
+        # if self._use_cuda:
+        #     self._actor_optimizer = self._actor_optimizer.cuda()
+        #     self._critic_optimizer = self._critic_optimizer.cuda()
 
     def train(self):
         """Trains the agent for a bit.
@@ -127,7 +137,7 @@ class DDPGAgent(agent.Agent):
             Returns:
                 None
         """
-        self.epsilon = self.epsilon * 0.9999
+        self.epsilon = self.epsilon * 0.99995
         #update_critic
         for i in range(self._critic_iter_count):
             s_t, a_t, r_t, s_t1, done = self.replay_buffer.batch_sample(self._batch_size)
@@ -196,16 +206,17 @@ class DDPGAgent(agent.Agent):
                 agent_id will carry out given the current state
         """
         cur_action = None
+        cur_state_up = self.upcast(np.expand_dims(cur_state,axis=0))
         if is_test:
-            a = self.actor.forward(self.upcast(np.expand_dims(cur_state,axis=0)))
+            a = self.actor.forward(cur_state_up)
             cur_action = a.data.cpu().numpy()
         elif random.random() < self.epsilon:
-            a = self.actor.forward(self.upcast(np.expand_dims(cur_state,axis=0)))
+            a = self.actor.forward(cur_state_up)
             cur_action = a.data.cpu().numpy()
-            cur_action += np.expand_dims(np.random.randn(self._action_size),axis=0)
+            cur_action += 0.3*np.expand_dims(np.random.randn(self._action_size),axis=0)
             self.replay_buffer.put_act(cur_state,cur_action)
         else:
-            a = self.actor.forward(self.upcast(np.expand_dims(cur_state,axis=0)))
+            a = self.actor.forward(cur_state_up)
             cur_action = a.data.cpu().numpy()
             self.replay_buffer.put_act(cur_state,cur_action)
         return cur_action
@@ -229,6 +240,13 @@ class DDPGAgent(agent.Agent):
         #Save both models
         torch.save(weight_dict, location)
 
+        #Move weights and bufffers to the gpu if possible
+        if self._use_cuda:
+            self.actor = self.actor.cuda()
+            self.critic = self.critic.cuda()
+            self._target_critic = self._target_critic.cuda()
+
+
     def load_models(self, location=None):
         # TODO: Make it actually do what it says
         #TODO: Remove hard coding of data
@@ -247,12 +265,6 @@ class DDPGAgent(agent.Agent):
             weight_dict = torch.load(location)
             self.actor.load_state_dict(weight_dict['actor'])
             self.critic.load_state_dict(weight_dict['critic'])
-
-        #Move weights and bufffers to the gpu if possible
-        if self._use_cuda:
-            self.actor.cuda()
-            self.critic.cuda()
-            self._target_critic.cuda()
 
     def upcast(self, x):
         ''' Upcasts x to a torch Variable.

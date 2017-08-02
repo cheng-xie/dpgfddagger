@@ -1,0 +1,19 @@
+{
+    "agent"   :   { 
+                "model_def"           : "model_def.py",
+                "actor_alpha"         : 0.01,
+                "batch_size"          : 128 
+                },
+
+    "train"   :   {
+                "steps" : 500000
+                },
+
+    "test"    :   {
+                "steps" : 1000
+                },
+
+    "env"     :   {
+                "name" : "BipedalWalker-v2"
+                }
+}
