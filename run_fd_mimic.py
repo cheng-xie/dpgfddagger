@@ -1,5 +1,6 @@
 from environment import GymEnvironment
 from mimic_agent import MimicAgent
+from fd_model import FDModel
 from experts.lunar_lander_heuristic import LunarLanderExpert
 from experts.bipedal_walker_heuristic import BipedalWalkerExpert
 from experts.half_cheeta import SmallReactivePolicy
@@ -25,8 +26,9 @@ def main(args):
 
     # update relative path to model_def module
     conf['agent']['model_def'] = os.path.join(model_path, conf['agent']['model_def'])
+    conf['fd']['model_def'] = os.path.join(model_path, conf['fd']['model_def'])
     
-    run = Runner(conf['env'], conf['agent'], use_cuda)
+    run = Runner(conf['env'], conf['agent'], conf['fd'], use_cuda)
 
     # load_path = args.load_path
     if is_test:
@@ -37,9 +39,12 @@ def main(args):
         conf['train']['save_path'] = save_path
         # conf['train']['load_path'] = load_path
         rews = []
-        if learn_fd:
-            # learn that fd model
-        for i in range(30):
+
+        # learn that fd model
+        states, actions, next_states, _ = run.sample_expert(400)
+        run.train_fd(states, actions, next_states, conf['train'], num_epochs=400)
+
+        for i in range(1):
             #states, actions, _, _ = run.sample_expert(400)
             #run.train_mimic(states, actions, conf['train'], num_epochs=400)
             run.train_dagger(conf['train'], num_tuples=400, num_epochs=400, do_render=do_render)
@@ -54,7 +59,7 @@ def main(args):
         print(np.std(rews))
 
 class Runner:
-    def __init__(self, env_config, agent_config, use_cuda = True):
+    def __init__(self, env_config, agent_config, fd_config, use_cuda = True):
         self.env = GymEnvironment(name = env_config["name"])
         self.action_size = self.env.action_size[0]
         self.state_size = self.env.obs_size[0]
@@ -63,6 +68,9 @@ class Runner:
                                 state_size = self.state_size,
                                 **agent_config, use_cuda = use_cuda)
 
+        self.fd = FDModel(action_size = self.action_size,
+                            state_size = self.state_size,
+                            **fd_config, use_cuda = use_cuda)
         # if train_config.get('load_path')
             # self.agent.load_models(train_config.get('load_path'))
 
@@ -85,30 +93,80 @@ class Runner:
 
         actions = np.empty((capacity, action_size), dtype = np.float16)
         states = np.empty((capacity, state_size), dtype = np.float16)
+        next_states = np.empty((capacity, state_size), dtype = np.float16)
         rewards = np.empty(capacity, dtype = np.float16)
-        dones = np.empty(capacity, dtype = np.bool)
 
         self.env.new_episode()
 
-        for i in range(num_tuples):
-            print('{} / {}'.format(i+1, num_tuples))
+        transition = 0
+        while transition < num_tuples:
+            print('{} / {}'.format(transition+1, num_tuples))
             cur_obs = self.env.cur_obs
             cur_action = self.expert.get_next_action(cur_obs)
 
-            next_state, reward, done = self.env.next_obs(cur_action, render = ((i % 8 == 0) and do_render))
-
-            actions[i] = cur_action
-            states[i] = cur_obs
-            rewards[i] = reward
-            dones[i] = done
+            next_state, reward, done = self.env.next_obs(cur_action, render = ((transition % 8 == 0) and do_render))
+            
+            # dont confuse the fd model with terminal states
+            if not done:
+                actions[transition] = cur_action
+                states[transition] = cur_obs
+                next_states[transition] = next_state 
+                rewards[transition] = reward
+                transition += 1
 
         print('Ave expert reward: ', np.mean(rewards))
-        return states, actions, rewards, dones
+        return states, actions, next_states, rewards
 
     def train_mimic(self, states, actions, train_config, num_epochs = 4000):
         # Load model
         #train_config.get('num_epochs')
         self.agent.train_epochs(states, actions, num_epochs, states.shape[0])
+
+    def train_mimic_fd(self, states, actions, train_config, num_epochs, do_render = False):
+        state_size = self.state_size
+        action_size = self.action_size
+        capacity = num_tuples
+
+        actions = np.empty((capacity, action_size), dtype = np.float16)
+        states = np.empty((capacity, state_size), dtype = np.float16)
+        rewards = np.empty(capacity, dtype = np.float16)
+        dones = np.empty(capacity, dtype = np.bool)
+
+        self.env.new_episode()
+
+        beta = 1.0
+        tuples_per_epoch = int(num_tuples/num_epochs)
+        epochs = 0
+        for i in range(num_tuples):
+            print('{} / {}'.format(i+1, num_tuples))
+            cur_obs = self.env.cur_obs
+            cur_action = None
+            expert_action = None
+            if beta > np.random.rand():
+                cur_action = self.expert.get_next_action(cur_obs)
+                expert_action = cur_action
+            else:
+                expert_action = self.expert.get_next_action(cur_obs)
+                cur_action = np.squeeze(self.agent.get_next_action(cur_obs), axis=0)
+                # cur_action = np.clip(cur_action, -1, 1)
+
+            next_state, reward, done = self.env.next_obs(cur_action, render = ((i % 8 == 0) and do_render))
+
+            actions[i] = expert_action
+            states[i] = cur_obs
+            rewards[i] = reward
+            dones[i] = done
+
+            beta = 1.0-float(i)/num_tuples
+
+            if ((i+1)%tuples_per_epoch) == 0 and i != 0:
+                self.agent.train_epochs(states[:i], actions[:i], 1, 500)
+                epochs += 1
+
+
+
+    def train_fd(self, states, actions, next_states, train_config, num_epochs):
+        self.fd.train_epochs(states, actions, next_states, num_epochs, states.shape[0])
 
     def train_dagger(self, train_config, num_tuples, num_epochs, do_render = False):
         # Load model

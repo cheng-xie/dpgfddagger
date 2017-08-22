@@ -72,7 +72,7 @@ class GymEnvironment(Environment):
             obs:    Initial observation of the new episode.
         """
         self.cur_obs = self.env.reset()
-        self.env.render()
+        # self.env.render()
         return self.cur_obs
 
     @property
@@ -82,6 +82,14 @@ class GymEnvironment(Environment):
     @property
     def obs_size(self):
         return self.env.observation_space.shape
+
+    @property
+    def action_space(self):
+        return self.env.action_space
+
+    @property
+    def observation_space(self):
+        return self.env.observation_space
 
     @property
     def cur_obs(self):
